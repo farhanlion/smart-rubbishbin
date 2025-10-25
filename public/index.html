@@ -1,192 +1,80 @@
 <!doctype html>
 <html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Smart Bin — Live Classification</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      body {
+        font-family: 'Inter', sans-serif;
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+        color: #f8fafc;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        height: 100vh;
+        margin: 0;
+        padding: 20px;
+      }
+      h2 {
+        font-weight: 600;
+        font-size: 1.8rem;
+        margin-bottom: 1rem;
+        color: #38bdf8;
+      }
+      pre {
+        background: rgba(255, 255, 255, 0.08);
+        border-radius: 10px;
+        padding: 20px;
+        width: 100%;
+        max-width: 500px;
+        font-family: monospace;
+        font-size: 1rem;
+        overflow-x: auto;
+        line-height: 1.4;
+        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      }
+      footer {
+        margin-top: 1rem;
+        font-size: 0.9rem;
+        color: #94a3b8;
+      }
+      @media (max-width: 600px) {
+        pre {
+          font-size: 0.9rem;
+          padding: 15px;
+        }
+      }
+    </style>
+  </head>
 
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Smart Bin Dashboard</title>
-  <style>
-    :root {
-      --bg: #0b1020;
-      --card: #121a33;
-      --muted: #8ea0c8;
-      --text: #e8eefc;
-    }
+  <body>
+    <h2>🧠 Live Classification</h2>
+    <pre id="out">Waiting for data...</pre>
+    <footer>Smart Bin Web Interface</footer>
 
-    * {
-      box-sizing: border-box;
-    }
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+      const out = document.getElementById('out');
+      const socket = io();
 
-    body {
-      margin: 0;
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, Inter, Ubuntu;
-      background: linear-gradient(160deg, #0b1020, #10193a);
-      color: var(--text);
-    }
+      const show = (data) => {
+        out.textContent = JSON.stringify(data, null, 2);
+      };
 
-    .wrap {
-      max-width: 980px;
-      margin: 40px auto;
-      padding: 0 16px;
-    }
+      socket.on('pi:update', show);
 
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      margin-bottom: 20px;
-    }
-
-    .title {
-      font-weight: 700;
-      font-size: 20px
-    }
-
-    .card {
-      background: var(--card);
-      border: 1px solid #1e2b57;
-      border-radius: 18px;
-      padding: 18px;
-      box-shadow: 0 10px 30px rgba(0, 0, 0, .25);
-    }
-
-    .grid {
-      display: grid;
-      gap: 16px;
-      grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-    }
-
-    .muted {
-      color: var(--muted);
-      font-size: 13px
-    }
-
-    .big {
-      font-size: 34px;
-      font-weight: 700
-    }
-
-    .pill {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      padding: 6px 10px;
-      border-radius: 999px;
-      background: #0f1730;
-      border: 1px solid #2a3e78;
-      font-size: 12px;
-      color: var(--muted)
-    }
-
-    .led {
-      width: 10px;
-      height: 10px;
-      border-radius: 50%
-    }
-
-    .led.green {
-      background: #31d158;
-      box-shadow: 0 0 14px #31d158
-    }
-
-    .led.yellow {
-      background: #ffd048;
-      box-shadow: 0 0 14px #ffd048
-    }
-
-    .led.red {
-      background: #ff4d4d;
-      box-shadow: 0 0 14px #ff4d4d
-    }
-
-    .progress {
-      height: 14px;
-      background: #0e1430;
-      border: 1px solid #25408c;
-      border-radius: 999px;
-      overflow: hidden
-    }
-
-    .bar {
-      height: 100%;
-      width: 0%
-    }
-
-    .bar.green {
-      background: #2fdd6a
-    }
-
-    .bar.yellow {
-      background: #ffd24f
-    }
-
-    .bar.red {
-      background: #ff5b5b
-    }
-
-    .mono {
-      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-    }
-
-    footer {
-      margin-top: 22px;
-      display: flex;
-      gap: 10px;
-      align-items: center;
-      color: var(--muted);
-      font-size: 12px
-    }
-
-    button {
-      background: #1a2a5c;
-      color: #e9f1ff;
-      border: 1px solid #2b4aa3;
-      border-radius: 10px;
-      padding: 8px 12px;
-      cursor: pointer
-    }
-
-    button:hover {
-      filter: brightness(1.1)
-    }
-  </style>
-</head>
-
-<body>
-  <div class="wrap">
-    <header>
-      <div class="title">🗑️ Smart Bin — Real-Time Status</div>
-      <div class="pill"><span id="ledDot" class="led green"></span><span id="ledText">LED: green</span></div>
-    </header>
-
-    <div class="grid">
-      <div class="card">
-        <div class="muted">Fill Level</div>
-        <div class="big"><span id="fillPct">—%</span></div>
-        <div class="progress">
-          <div id="fillBar" class="bar green"></div>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="muted">Current Weight</div>
-        <div class="big"><span id="weightKg">—</span> <span class="muted">kg</span></div>
-      </div>
-
-      <div class="card">
-        <div class="muted">Classification</div>
-        <div class="big" id="classif">—</div>
-      </div>
-    </div>
-
-    <footer>
-      <div>Last updated: <span id="lastUpdated" class="mono">—</span></div>
-      <button id="refreshBtn">Refresh</button>
-      <div class="muted">Auto-refreshes every 2s</div>
-    </footer>
-  </div>
-
-  <script src="index.js"></script>
-</body>
-
+      fetch('/data')
+        .then((r) => r.json())
+        .then((d) => d.lastResult && show(d.lastResult))
+        .catch(() => {
+          out.textContent = '⚠️ Failed to load initial data.';
+        });
+    </script>
+  </body>
 </html>
