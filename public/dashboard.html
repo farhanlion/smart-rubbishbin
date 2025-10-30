@@ -7,6 +7,7 @@
   <title>Smart Bin Dashboard</title>
   <!-- Chart.js & Socket.IO -->
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns"></script>
   <script src="/socket.io/socket.io.js"></script>
   <style>
     :root {
@@ -465,7 +466,17 @@
           animation: false,
           scales: {
             x: {
-              ticks: { callback: (v) => fmt.format(this?.getLabelForValue ? new Date(this.getLabelForValue(v)) : new Date()) }
+              type: 'time',
+              time: {
+                unit: hoursRange <= 24 ? 'hour' : 'day',
+                tooltipFormat: 'MMM dd HH:mm'
+              },
+              ticks: {
+                color: '#cdd7f5'
+              },
+              grid: {
+                color: '#1c2740'
+              }
             },
             y: { min: 0, max: 100, title: { display: true, text: 'Percent full' } }
           },
