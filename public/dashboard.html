@@ -1,0 +1,504 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Smart Bin Dashboard</title>
+  <!-- Chart.js & Socket.IO -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111a2e;
+      --muted: #8ea0c0;
+      --accent: #4f8cff;
+      --ok: #38d39f;
+      --warn: #ffbf5b;
+      --bad: #ff6b6b;
+      --border: #1c2740;
+      --white: #fff;
+      --chip: #1b2540
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--white);
+      font-family: Inter, system-ui, Segoe UI, Roboto, Arial, sans-serif
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      gap: .75rem;
+      padding: 14px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255, 255, 255, .04), rgba(255, 255, 255, 0))
+    }
+
+    header h1 {
+      font-size: 18px;
+      margin: 0;
+      font-weight: 600
+    }
+
+    header .chip {
+      font-size: 12px;
+      color: var(--muted);
+      background: var(--chip);
+      padding: 4px 8px;
+      border-radius: 999px;
+      border: 1px solid var(--border)
+    }
+
+    main {
+      display: grid;
+      grid-template-columns: 320px 1fr;
+      min-height: calc(100vh - 56px)
+    }
+
+    aside {
+      border-right: 1px solid var(--border);
+      padding: 16px;
+      overflow: auto
+    }
+
+    .search {
+      display: flex;
+      gap: 8px
+    }
+
+    .search input {
+      flex: 1;
+      background: #0c1629;
+      border: 1px solid var(--border);
+      color: var(--white);
+      padding: 8px 10px;
+      border-radius: 8px
+    }
+
+    .btn {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      color: var(--white);
+      padding: 8px 10px;
+      border-radius: 8px;
+      cursor: pointer
+    }
+
+    .btn.small {
+      padding: 6px 8px;
+      font-size: 12px
+    }
+
+    .btn.primary {
+      background: var(--accent);
+      border-color: transparent
+    }
+
+    .list {
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 12px;
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      cursor: pointer
+    }
+
+    .card:hover {
+      border-color: #2a3a66
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%
+    }
+
+    .dot.green {
+      background: var(--ok)
+    }
+
+    .dot.orange {
+      background: var(--warn)
+    }
+
+    .dot.red {
+      background: var(--bad)
+    }
+
+    .meta {
+      color: var(--muted);
+      font-size: 12px
+    }
+
+    section {
+      padding: 16px 20px;
+      display: grid;
+      grid-template-rows: auto auto 1fr
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px
+    }
+
+    .panel {
+      background: var(--panel);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 14px
+    }
+
+    .row {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap
+    }
+
+    .kv {
+      display: grid;
+      grid-template-columns: 140px 1fr;
+      gap: 8px;
+      margin: 6px 0
+    }
+
+    .kv .k {
+      color: var(--muted)
+    }
+
+    .chips {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap
+    }
+
+    .chip2 {
+      background: var(--chip);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 6px 10px;
+      font-size: 12px;
+      color: var(--muted)
+    }
+
+    .table {
+      width: 100%;
+      border-collapse: collapse
+    }
+
+    .table th,
+    .table td {
+      border-bottom: 1px solid var(--border);
+      padding: 8px;
+      text-align: left;
+      font-size: 13px
+    }
+
+    .table th {
+      color: var(--muted);
+      font-weight: 600
+    }
+
+    .right {
+      text-align: right
+    }
+
+    .muted {
+      color: var(--muted)
+    }
+
+    .spacer {
+      flex: 1
+    }
+
+    .warning {
+      color: var(--warn)
+    }
+
+    .success {
+      color: var(--ok)
+    }
+
+    .danger {
+      color: var(--bad)
+    }
+
+    .link {
+      color: var(--accent);
+      text-decoration: none
+    }
+
+    @media (max-width: 900px) {
+      main {
+        grid-template-columns: 1fr
+      }
+
+      aside {
+        order: 2
+      }
+
+      section {
+        order: 1
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <header>
+    <h1>♻️ Smart Bin Dashboard</h1>
+    <span class="chip" id="socketStatus">socket: connecting…</span>
+    <span class="chip">/api/bins</span>
+    <a class="chip link" href="/data.csv">download csv</a>
+    <span class="spacer"></span>
+    <button class="btn small" id="refreshBtn">Refresh</button>
+  </header>
+  <main>
+    <aside>
+      <div class="search">
+        <input id="search" placeholder="Search bins… (e.g. BIN-003)" />
+        <button class="btn" id="clear">✕</button>
+      </div>
+      <div class="list" id="binList"></div>
+    </aside>
+
+    <section>
+      <div class="grid">
+        <div class="panel">
+          <div class="row" style="margin-bottom:8px">
+            <h3 id="title" style="margin:0">Select a bin</h3>
+            <span class="chip2" id="etaChip" title="ETA to 90%">ETA: —</span>
+            <span class="chip2" id="slopeChip" title="Percent per hour">slope: —</span>
+            <span class="spacer"></span>
+            <div class="row">
+              <button class="btn small" data-range="24">24h</button>
+              <button class="btn small" data-range="72">72h</button>
+              <button class="btn small" data-range="168">7d</button>
+            </div>
+          </div>
+          <canvas id="chart" height="120"></canvas>
+        </div>
+        <div class="panel">
+          <h3 style="margin:0 0 8px">Details</h3>
+          <div class="kv">
+            <div class="k">Bin ID</div>
+            <div id="d_id" class="muted">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Postal code</div>
+            <div id="d_postal" class="muted">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Last updated</div>
+            <div id="d_updated" class="muted">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Distance (cm)</div>
+            <div id="d_distance" class="muted">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">Percent full</div>
+            <div id="d_pct" class="muted">—</div>
+          </div>
+          <div class="kv">
+            <div class="k">State</div>
+            <div id="d_state" class="muted">—</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="panel" style="margin-top:16px">
+        <div class="row" style="margin-bottom:8px">
+          <h3 style="margin:0">Recent classifications</h3>
+          <span class="spacer"></span>
+          <button class="btn small" id="reloadCls">Reload</button>
+        </div>
+        <table class="table" id="clsTable">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Bin</th>
+              <th>Label</th>
+              <th class="right">Conf.</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const fmt = new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+    const fmtFull = new Intl.DateTimeFormat(undefined, { year: 'numeric', month: 'short', day: '2-digit', hour: '2-digit', minute: '2-digit' });
+
+    let chart, binsCache = [], selectedId = null, hoursRange = 72;
+
+    // Socket.IO live updates
+    const socket = io();
+    const socketStatus = document.getElementById('socketStatus');
+    socket.on('connect', () => socketStatus.textContent = 'socket: connected');
+    socket.on('disconnect', () => socketStatus.textContent = 'socket: disconnected');
+    socket.on('pi:update', () => { // any sensor/classification update => refresh sidebar
+      loadBins();
+      if (selectedId) drawChart(selectedId);
+    });
+
+    document.getElementById('refreshBtn').onclick = () => { loadBins(); if (selectedId) drawChart(selectedId); };
+    document.getElementById('clear').onclick = () => { document.getElementById('search').value = ''; renderBinList(); };
+    document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { hoursRange = Number(b.dataset.range); if (selectedId) drawChart(selectedId); });
+
+    document.getElementById('reloadCls').onclick = loadClassifications;
+
+    async function loadBins() {
+      const res = await fetch('/api/bins');
+      const data = await res.json();
+      binsCache = data.bins || [];
+      renderBinList();
+    }
+
+    function renderBinList() {
+      const q = (document.getElementById('search').value || '').toLowerCase();
+      const list = document.getElementById('binList');
+      list.innerHTML = '';
+      (binsCache.filter(b => !q || b.id.toLowerCase().includes(q) || String(b.postalCode || '').includes(q))).forEach(b => {
+        const div = document.createElement('div');
+        div.className = 'card';
+        div.onclick = () => selectBin(b.id);
+        div.innerHTML = `
+        <div class="dot ${b.colour}"></div>
+        <div style="flex:1">
+          <div style="display:flex;gap:8px;align-items:center"><strong>${b.id}</strong><span class="meta">${b.postalCode || ''}</span></div>
+          <div class="meta">${b.percent_full}% full • ${fmtFull.format(new Date(b.last_updated))}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-weight:700">${b.percent_full}%</div>
+          <div class="meta">${b.state}</div>
+        </div>`;
+        list.appendChild(div);
+      });
+    }
+
+    function selectBin(id) {
+      selectedId = id;
+      const b = binsCache.find(x => x.id === id);
+      if (!b) return;
+      document.getElementById('title').textContent = `Bin ${id}`;
+      document.getElementById('d_id').textContent = b.id;
+      document.getElementById('d_postal').textContent = b.postalCode || '—';
+      document.getElementById('d_updated').textContent = fmtFull.format(new Date(b.last_updated));
+      document.getElementById('d_distance').textContent = (b.distance_cm ?? '—');
+      document.getElementById('d_pct').textContent = (b.percent_full ?? '—') + '%';
+      document.getElementById('d_state').textContent = b.state;
+      drawChart(id);
+    }
+
+    async function drawChart(id) {
+      const [hRes, pRes] = await Promise.all([
+        fetch(`/api/bins/${id}/history?hours=${hoursRange}`),
+        fetch(`/api/bins/${id}/predict?hours=72`)
+      ]);
+      const { series } = await hRes.json();
+      const pred = await pRes.json();
+
+      const labels = (series || []).map(p => new Date(p.timeISO));
+      const actual = (series || []).map(p => p.percent_full);
+
+      const predLabels = (pred.points || []).map(p => new Date(p.timeISO));
+      const predData = (pred.points || []).map(p => p.percent_full);
+
+      // update chips
+      document.getElementById('etaChip').textContent = 'ETA: ' + (pred.eta90_iso ? fmtFull.format(new Date(pred.eta90_iso)) : '—');
+      document.getElementById('slopeChip').textContent = 'slope: ' + (pred.slope_per_hr != null ? pred.slope_per_hr.toFixed(2) + '%/h' : '—');
+
+      const ctx = document.getElementById('chart').getContext('2d');
+      if (chart) chart.destroy();
+
+      chart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: [...labels, ...predLabels],
+          datasets: [
+            {
+              label: 'Actual % full',
+              data: [...actual, ...Array(predLabels.length).fill(null)],
+              borderWidth: 2,
+              pointRadius: 0
+            },
+            {
+              label: 'Predicted % full',
+              data: [...Array(labels.length).fill(null), ...predData],
+              borderWidth: 2,
+              borderDash: [6, 6],
+              pointRadius: 0
+            },
+            {
+              label: '90% threshold',
+              data: [...Array(labels.length + predLabels.length).fill(90)],
+              borderWidth: 1,
+              borderDash: [2, 4],
+              pointRadius: 0
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          animation: false,
+          scales: {
+            x: {
+              ticks: { callback: (v) => fmt.format(this?.getLabelForValue ? new Date(this.getLabelForValue(v)) : new Date()) }
+            },
+            y: { min: 0, max: 100, title: { display: true, text: 'Percent full' } }
+          },
+          plugins: {
+            legend: { labels: { color: '#cdd7f5' } },
+            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Math.round(ctx.parsed.y)}%` } }
+          }
+        }
+      });
+    }
+
+    async function loadClassifications() {
+      const res = await fetch('/history/classifications?limit=20');
+      const { items = [] } = await res.json();
+      const tbody = document.querySelector('#clsTable tbody');
+      tbody.innerHTML = '';
+      items.forEach(e => {
+        const tr = document.createElement('tr');
+        tr.innerHTML = `
+        <td class="muted">${fmtFull.format(new Date(e.timestamp))}</td>
+        <td>${e.bin_id || '—'}</td>
+        <td>${e.label || '—'}</td>
+        <td class="right">${e.confidence != null ? Number(e.confidence).toFixed(2) : '—'}</td>
+        <td>${e.recyclable || '—'}</td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // init
+    loadBins();
+    loadClassifications();
+
+  </script>
+</body>
+
+</html>

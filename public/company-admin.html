@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Company Bin Admin</title>
+  <style>
+    body {
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
+      margin: 0;
+      padding: 0;
+      background: #f8f9fa;
+    }
+
+    header {
+      background: #222;
+      color: #fff;
+      padding: 10px 15px;
+      font-size: 1.2rem;
+    }
+
+    main {
+      display: flex;
+      height: calc(100vh - 50px);
+    }
+
+    aside {
+      width: 380px;
+      border-right: 1px solid #ddd;
+      background: #fff;
+      overflow-y: auto;
+    }
+
+    section {
+      flex: 1;
+      background: #fafafa;
+    }
+
+    iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+    }
+
+    .controls {
+      display: flex;
+      gap: 8px;
+      padding: 10px;
+      border-bottom: 1px solid #eee;
+    }
+
+    .controls input {
+      flex: 1;
+      padding: 6px 8px;
+      font-size: 1rem;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+
+    .controls button {
+      padding: 6px 12px;
+      background: #007bff;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+
+    .controls button:hover {
+      background: #0056b3;
+    }
+
+    #status {
+      padding: 8px 10px;
+      font-size: 0.9rem;
+      color: #666;
+      border-bottom: 1px solid #eee;
+    }
+
+    .row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 8px 10px;
+      border-bottom: 1px solid #f0f0f0;
+      cursor: pointer;
+    }
+
+    .row:hover {
+      background: #f1f7ff;
+    }
+
+    .muted {
+      color: #666;
+    }
+
+    .pill {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      font-weight: 600;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+
+    #emptyList {
+      text-align: center;
+      padding: 20px;
+      color: #888;
+      display: none;
+    }
+  </style>
+</head>
+
+<body>
+  <header>🗑️ Company Bin Admin Dashboard</header>
+  <main>
+    <aside>
+      <div class="controls">
+        <input type="text" id="search" placeholder="Search by ID or postal…" />
+        <button id="refreshBtn" type="button">↻</button>
+      </div>
+      <div id="status">Loading…</div>
+      <div id="binList"></div>
+      <div id="emptyList">No bins found</div>
+    </aside>
+    <section>
+      <iframe id="mapFrame" src=""></iframe>
+    </section>
+  </main>
+
+  <script>
+    // Config
+    var MAP_BASE = "https://www.onemap.gov.sg/amm/amm.html";
+    var DEFAULT_ZOOM = 12;
+    var DEFAULT_STYLE = "Default";
+    var POPUP_WIDTH = 240;
+    var FALLBACK_BIN_HEIGHT_CM = 30; // distance: 30cm==empty, 0cm==full
+    var MAX_MARKERS = 50;
+
+    // DOM
+    var statusEl = document.getElementById('status');
+    var frame = document.getElementById('mapFrame');
+    var listEl = document.getElementById('binList');
+    var emptyEl = document.getElementById('emptyList');
+    var searchEl = document.getElementById('search');
+    var refreshBtn = document.getElementById('refreshBtn');
+
+    // State
+    var allBins = [];
+    var filtered = [];
+
+    // Init
+    refreshBtn.addEventListener('click', loadBins);
+    searchEl.addEventListener('input', onSearch);
+    loadBins();
+
+    // Fetch & normalize
+    function loadBins() {
+      statusEl.textContent = 'Loading…';
+      fetch('/api/bins', { cache: 'no-store' })
+        .then(function (res) { return res.json(); })
+        .then(function (data) {
+          var serverBins = (data && Array.isArray(data.bins)) ? data.bins : [];
+
+          allBins = serverBins.map(function (b) {
+            var id = String(b && b.id != null ? b.id : '') || undefined;
+            var postalCode = String((b && (b.postalCode != null ? b.postalCode : b.postal_code)) || '');
+            var bin_height_cm = toNumber(b && b.bin_height_cm) || FALLBACK_BIN_HEIGHT_CM;
+            var distance_cm = toNumber((b && b.distance_cm) != null ? b.distance_cm :
+              (b && b.distance) != null ? b.distance :
+                (b && b.ultrasonic));
+            var percent_full = isFiniteNum(b && b.percent_full) ? Number(b.percent_full)
+              : cmToPercentFull(distance_cm, bin_height_cm);
+            var colour = String((b && b.colour) || colourFromPercent(percent_full) || 'gray').toLowerCase();
+            var state = (b && b.state) ? b.state : stateFromPercent(percent_full);
+            var last_updated = b && b.last_updated ? b.last_updated : null;
+
+            return {
+              id: id,
+              postalCode: postalCode,
+              bin_height_cm: bin_height_cm,
+              distance_cm: distance_cm,
+              percent_full: percent_full,
+              colour: colour,
+              state: state,
+              last_updated: last_updated
+            };
+          });
+
+          filtered = allBins.slice();
+          statusEl.textContent = String(allBins.length) + ' bin' + (allBins.length === 1 ? '' : 's') + ' loaded';
+          updateMap(filtered);
+          renderList(filtered);
+        })
+        .catch(function (err) {
+          console.error(err);
+          statusEl.textContent = 'Failed to load bins';
+        });
+    }
+
+    // Search
+    function onSearch() {
+      var q = String(searchEl.value || '').trim().toLowerCase();
+      if (!q) {
+        filtered = allBins.slice();
+      } else {
+        filtered = allBins.filter(function (b) {
+          var id = String(b.id || '').toLowerCase();
+          var pc = String(b.postalCode || '').toLowerCase();
+          return id.indexOf(q) !== -1 || pc.indexOf(q) !== -1;
+        });
+      }
+      renderList(filtered);
+      updateMap(filtered);
+    }
+
+    // Calculations (fallbacks)
+    function cmToPercentFull(distanceCm, binHeightCm) {
+      if (!isFinite(distanceCm)) return null;
+      var h = isFinite(binHeightCm) ? binHeightCm : FALLBACK_BIN_HEIGHT_CM;
+      var d = Math.max(0, Math.min(distanceCm, h));
+      return Math.round((1 - d / h) * 100);
+    }
+    function colourFromPercent(pct) {
+      if (pct == null) return 'gray';
+      if (pct >= 90) return 'red';
+      if (pct >= 70) return 'orange';
+      return 'green';
+    }
+    function stateFromPercent(pct) {
+      if (pct == null) return 'unknown';
+      if (pct >= 90) return 'full';
+      if (pct >= 70) return 'getting_full';
+      return 'ok';
+    }
+
+    // Map
+    function updateMap(items) {
+      var params = new URLSearchParams();
+      params.set('mapStyle', DEFAULT_STYLE);
+      params.set('zoomLevel', String(DEFAULT_ZOOM));
+      params.set('popupWidth', String(POPUP_WIDTH));
+
+      var chunk = items.slice(0, MAX_MARKERS);
+      for (var i = 0; i < chunk.length; i++) {
+        var b = chunk[i];
+        var code = sanitizePostal(b.postalCode);
+        if (!code) continue;
+
+        var pct = isFiniteNum(b.percent_full) ? Math.max(0, Math.min(100, Number(b.percent_full)))
+          : cmToPercentFull(b.distance_cm, b.bin_height_cm);
+        var colour = String(b.colour || colourFromPercent(pct)).toLowerCase();
+        var pctTxt = (pct == null) ? '--' : String(pct) + '%';
+        var distTxt = isFinite(b.distance_cm) ? Number(b.distance_cm).toFixed(1) + 'cm' : '—';
+        var label = (b.id || code) + ' • ' + pctTxt + ' • d=' + distTxt;
+
+        params.append('marker', 'postalcode:' + code + '!colour:' + colour + '!text:' + encodeURIComponent(label));
+      }
+      frame.src = MAP_BASE + '?' + params.toString();
+    }
+
+    // List
+    function renderList(items) {
+      listEl.innerHTML = '';
+      if (!items.length) {
+        emptyEl.style.display = 'block';
+        return;
+      }
+      emptyEl.style.display = 'none';
+
+      for (var i = 0; i < items.length; i++) {
+        var b = items[i];
+        var pct = isFiniteNum(b.percent_full) ? Number(b.percent_full)
+          : cmToPercentFull(b.distance_cm, b.bin_height_cm);
+        var colour = String(b.colour || colourFromPercent(pct)).toLowerCase();
+
+        var row = document.createElement('div');
+        row.className = 'row';
+        row.innerHTML =
+          '<div>' +
+          '<strong>' + escapeHTML(b.id || '—') + '</strong>' +
+          '<div class="muted" style="font-size:.9rem">Postal code: ' + escapeHTML(sanitizePostal(b.postalCode) || '—') + '</div>' +
+          '<div class="muted" style="font-size:.9rem">' +
+          'Full: ' + (isFinite(pct) ? (pct + '%') : '—') +
+          (isFinite(b.distance_cm) ? (' • Distance: ' + Number(b.distance_cm).toFixed(1) + 'cm') : '') +
+          (b.last_updated ? (' • Updated: ' + new Date(b.last_updated).toLocaleString()) : '') +
+          '</div>' +
+          '</div>' +
+          '<div class="pill"><span class="dot" style="background:' + colour + '"></span><span>' + escapeHTML(b.state || stateFromPercent(pct)) + '</span></div>';
+
+        (function (bin) {
+          row.addEventListener('click', function () {
+            var reordered = [bin].concat(allBins.filter(function (x) { return x !== bin; }));
+            updateMap(reordered);
+          });
+        })(b);
+
+        listEl.appendChild(row);
+      }
+    }
+
+    // Utils
+    function sanitizePostal(v) {
+      if (v == null) return '';
+      var s = String(v).replace(/\D/g, '').slice(0, 6);
+      return s.length === 6 ? s : '';
+    }
+    function escapeHTML(s) {
+      return String(s).replace(/[&<>"']/g, function (c) {
+        return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]);
+      });
+    }
+    function toNumber(v) {
+      if (typeof v === 'number') return v;
+      if (typeof v === 'string') {
+        var n = Number(v.replace(/[^0-9.+-]/g, ''));
+        return isFinite(n) ? n : NaN;
+      }
+      return NaN;
+    }
+    function isFiniteNum(n) { return typeof n === 'number' && isFinite(n); }
+  </script>
+</body>
+
+</html>

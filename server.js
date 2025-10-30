@@ -57,18 +57,68 @@ app.post("/update", (req, res) => {
   const entry = isClassification
     ? normalizeClassification("http-update", b)
     : {
-        source: "http-update",
-        kind: "sensors",
-        bin_id: safeStr(b.bin_id),
-        timestamp: b.timestamp || new Date().toISOString(),
-        sensors: normalizeSensors(b.sensors || b),
-      };
+      source: "http-update",
+      kind: "sensors",
+      bin_id: safeStr(b.bin_id),
+      timestamp: b.timestamp || new Date().toISOString(),
+      sensors: normalizeSensors(b.sensors || b),
+    };
 
   storeAndBroadcast(entry);
   return res.json({ ok: true });
 });
 
 app.get("/data", (_, res) => res.json({ lastResult, history }));
+
+app.get("/data.csv", (_, res) => {
+  try {
+    if (!history.length) {
+      return res.status(200).send("No data available\n");
+    }
+
+    const rows = [];
+    const headers = [
+      "source", "kind", "bin_id", "label", "confidence", "time_ms",
+      "timestamp", "recyclable", "override", "id",
+      "recycle_ultrasonic", "general_ultrasonic", "weight"
+    ];
+    rows.push(headers.join(","));
+
+    for (const e of history) {
+      const s = e.sensors || {};
+      const recycle = s.recycle || {};
+      const general = s.general || {};
+
+      const row = [
+        e.source ?? "",
+        e.kind ?? "",
+        e.bin_id ?? "",
+        e.label ?? "",
+        e.confidence ?? "",
+        e.time_ms ?? "",
+        e.timestamp ?? "",
+        e.recyclable ?? "",
+        e.override ?? "",
+        e.id ?? "",
+        recycle.ultrasonic ?? "",
+        general.ultrasonic ?? "",
+        e.weight ?? ""
+      ].map(v => `"${String(v).replace(/"/g, '""')}"`);
+
+      rows.push(row.join(","));
+    }
+
+    const csv = rows.join("\n");
+    res.header("Content-Type", "text/csv");
+    res.attachment("smartbin_data.csv");
+    res.send(csv);
+  } catch (err) {
+    console.error(err);
+    res.status(500).send("Error generating CSV");
+  }
+});
+
+
 
 // Classifications-only history
 app.get("/history/classifications", (req, res) => {
@@ -103,8 +153,107 @@ app.post("/override", (req, res) => {
   return res.json({ ok: true });
 });
 
+// NEW: acknowledge endpoint — tell the Pi and remove the item from history
+app.post("/acknowledge", (req, res) => {
+  const body = req.body || {};
+  const id = safeStr(body.id);
+  if (!id) return res.status(400).json({ ok: false, error: "Missing id" });
+
+  // tell the device
+  const payload = {
+    id,
+    bin_id: safeStr(body.bin_id),
+    timestamp: body.timestamp || new Date().toISOString(),
+  };
+  io.to(PI_ROOM).emit("pi:cmd", { action: "acknowledge", payload, ts: Date.now() });
+
+  // remove from history
+  const idx = history.findIndex((e) => e && e.id === id);
+  if (idx !== -1) history.splice(idx, 1);
+
+  // if it was the lastResult, shift it
+  if (lastResult && lastResult.id === id) {
+    lastResult = history[history.length - 1] || null;
+  }
+
+  return res.json({ ok: true, removed: id });
+});
+
+app.get("/company", (_req, res) =>
+  res.sendFile(path.join(__dirname, "public", "company-admin.html"))
+);
+
+// Example only — swap with DB values
+// Example only — swap with DB values
+app.get("/api/bins", async (_req, res) => {
+  const BIN_HEIGHT_CM = 30; // distance sensor: 30cm == empty, 0cm == full
+  const nowIso = new Date().toISOString();
+
+  // Raw snapshot distances (you can replace with live DB values)
+  const binsRaw = [
+    { id: "BIN-001", postalCode: "238895", distance_cm: 22.5 }, // ~25% full (green)
+    { id: "BIN-002", postalCode: "178903", distance_cm: 2.5 }, // ~92% full (red)
+    { id: "BIN-003", postalCode: "520117", distance_cm: 9.0 }, // ~70% full (orange threshold)
+    { id: "BIN-004", postalCode: "409051", distance_cm: 15.0 }, // ~50% full (green)
+    { id: "BIN-005", postalCode: "069120", distance_cm: 28.0 }, // ~7%  full (green)
+    { id: "BIN-006", postalCode: "149729", distance_cm: 6.0 }, // ~80% full (orange)
+    { id: "BIN-007", postalCode: "546080", distance_cm: 1.5 }, // ~95% full (red)
+    { id: "BIN-008", postalCode: "310158", distance_cm: 18.5 }, // ~38% full (green)
+  ];
+
+  const percentFull = (distance, height = BIN_HEIGHT_CM) => {
+    if (!Number.isFinite(distance)) return null;
+    const d = Math.max(0, Math.min(distance, height));
+    return Math.round((1 - d / height) * 100);
+  };
+
+  const colourFromPct = (pct) => {
+    if (pct == null) return "gray";
+    if (pct >= 90) return "red";
+    if (pct >= 70) return "orange";
+    return "green";
+  };
+
+  const stateFromPct = (pct) => {
+    if (pct == null) return "unknown";
+    if (pct >= 90) return "full";
+    if (pct >= 70) return "getting_full";
+    return "ok";
+  };
+
+  const bins = binsRaw.map((b) => {
+    const pct = percentFull(b.distance_cm, BIN_HEIGHT_CM);
+    const colour = colourFromPct(pct);
+    const state = stateFromPct(pct);
+    return {
+      ...b,                                       // keep original fields
+      percent_full: pct,                          // 0–100
+      colour,                                     // green/orange/red
+      state,                                      // ok/getting_full/full
+      last_updated: nowIso,
+      bin_height_cm: BIN_HEIGHT_CM,
+    };
+  });
+
+  res.json({
+    bins,
+    meta: {
+      bin_height_default_cm: BIN_HEIGHT_CM,
+      thresholds: { orange_from_pct: 70, red_from_pct: 90 },
+      note: "percent_full is derived from ultrasonic distance (0cm=100%, 30cm=0%)",
+    },
+  });
+});
+
+
+
 // --------------- Helpers ---------------
+function makeId() {
+  return Math.random().toString(36).slice(2, 8) + Date.now().toString(36);
+}
+
 function storeAndBroadcast(entry) {
+  if (!entry.id) entry.id = makeId(); // ensure every entry has an id
   lastResult = entry;
   history.push(entry);
   if (history.length > MAX_HISTORY) history.shift();
@@ -130,7 +279,6 @@ function normalizeClassification(source, p = {}) {
     recyclable,
     sensors: normalizeSensors(p.sensors) || undefined,
     override,
-    // image_b64_jpeg: p.image_b64_jpeg,
   };
 }
 
