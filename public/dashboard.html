@@ -93,6 +93,22 @@
       cursor: pointer
     }
 
+    a.bin-link {
+      color: #4f8cff;
+      /* bright blue to match your accent color */
+      font-weight: 600;
+      /* slightly bold for visibility */
+      text-decoration: none;
+      /* clean look */
+    }
+
+    a.bin-link:hover {
+      color: #8cbcff;
+      /* lighter blue on hover */
+      text-decoration: underline;
+      /* make it clear it's clickable */
+    }
+
     .btn.small {
       padding: 6px 8px;
       font-size: 12px
@@ -328,23 +344,30 @@
 
       <div class="panel" style="margin-top:16px">
         <div class="row" style="margin-bottom:8px">
-          <h3 style="margin:0">Recent classifications</h3>
+          <h3 style="margin:0">Pickup Schedule</h3>
           <span class="spacer"></span>
-          <button class="btn small" id="reloadCls">Reload</button>
+          <button class="btn small" id="reloadPickup">Reload</button>
         </div>
-        <table class="table" id="clsTable">
+        <table class="table" id="pickupTable">
           <thead>
             <tr>
-              <th>Time</th>
               <th>Bin</th>
-              <th>Label</th>
-              <th class="right">Conf.</th>
+              <th>Postal Code</th>
+              <th>Current %</th>
+              <th>Pick Up Before</th>
               <th>Status</th>
             </tr>
           </thead>
           <tbody></tbody>
         </table>
       </div>
+      <div class="panel" style="margin-top:16px">
+        <h3 style="margin:0 0 8px">Bin Locations</h3>
+        <iframe id="mapFrame" src="https://www.onemap.gov.sg/amm/amm.html?mapStyle=Default&zoomLevel=12&popupWidth=240"
+          width="100%" height="400" style="border:none;border-radius:12px">
+        </iframe>
+      </div>
+
     </section>
   </main>
 
@@ -368,7 +391,6 @@
     document.getElementById('clear').onclick = () => { document.getElementById('search').value = ''; renderBinList(); };
     document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { hoursRange = Number(b.dataset.range); if (selectedId) drawChart(selectedId); });
 
-    document.getElementById('reloadCls').onclick = loadClassifications;
 
     async function loadBins() {
       const res = await fetch('/api/bins');
@@ -488,26 +510,89 @@
       });
     }
 
-    async function loadClassifications() {
-      const res = await fetch('/history/classifications?limit=20');
-      const { items = [] } = await res.json();
-      const tbody = document.querySelector('#clsTable tbody');
-      tbody.innerHTML = '';
-      items.forEach(e => {
-        const tr = document.createElement('tr');
-        tr.innerHTML = `
-        <td class="muted">${fmtFull.format(new Date(e.timestamp))}</td>
-        <td>${e.bin_id || '—'}</td>
-        <td>${e.label || '—'}</td>
-        <td class="right">${e.confidence != null ? Number(e.confidence).toFixed(2) : '—'}</td>
-        <td>${e.recyclable || '—'}</td>`;
-        tbody.appendChild(tr);
-      });
-    }
+
 
     // init
     loadBins();
-    loadClassifications();
+
+    async function loadPickupSchedule() {
+      const tbody = document.querySelector("#pickupTable tbody");
+      tbody.innerHTML = `<tr><td colspan="5" class="text-center">Loading...</td></tr>`;
+
+      try {
+        const res = await fetch("/api/pickups");
+        const { items = [] } = await res.json();
+
+        if (!items.length) {
+          tbody.innerHTML = `<tr><td colspan="5" class="text-center muted">No pickups scheduled</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = items.map(b => {
+          const eta = b.eta100_iso ? new Date(b.eta100_iso).toLocaleString() : "—";
+          return `
+        <tr>
+          <td><a href="#" class="bin-link" data-bin="${b.bin_id}">${b.bin_id}</a></td>
+          <td>${b.postalCode || "-"}</td>
+          <td>${b.current_percent}%</td>
+          <td>${eta}</td>
+          <td>${b.forecast_status}</td>
+        </tr>
+              `;
+        }).join("");
+
+        // Click → show chart
+        tbody.querySelectorAll("a[data-bin]").forEach(a => {
+          a.onclick = ev => {
+            ev.preventDefault();
+            selectBin(a.dataset.bin);
+          };
+        });
+
+      } catch (err) {
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading schedule</td></tr>`;
+      }
+    }
+
+    // Hook up reload button and auto-load
+    document.getElementById("reloadPickup").addEventListener("click", loadPickupSchedule);
+    window.addEventListener("DOMContentLoaded", loadPickupSchedule);
+
+    async function updateMapFromBins() {
+      try {
+        const res = await fetch('/api/bins');
+        const data = await res.json();
+        const bins = data.bins || [];
+
+        const params = new URLSearchParams();
+        params.set('mapStyle', 'Default');
+        params.set('zoomLevel', '12');
+        params.set('popupWidth', '240');
+
+        bins.slice(0, 50).forEach(b => {
+          const code = String(b.postalCode || '').replace(/\D/g, '').slice(0, 6);
+          if (code.length === 6) {
+            const pct = b.percent_full ?? 0;
+            const colour = pct >= 90 ? 'red' : pct >= 70 ? 'orange' : 'green';
+            const label = `${b.id} • ${pct}% full`;
+            console.log("Adding marker for", b.id, code);
+            params.append('marker', `postalcode:${code}!colour:${colour}!text:${encodeURIComponent(label)}`);
+          } else {
+            console.warn("Skipping invalid postal for", b.id, code);
+          }
+        });
+
+        document.getElementById('mapFrame').src =
+          'https://www.onemap.gov.sg/amm/amm.html?' + params.toString();
+      } catch (err) {
+        console.error('Map update failed:', err);
+      }
+    }
+
+    // Load when dashboard loads
+    window.addEventListener('DOMContentLoaded', updateMapFromBins);
+    document.getElementById('reloadPickup').addEventListener('click', updateMapFromBins);
 
   </script>
 </body>
