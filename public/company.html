@@ -1,0 +1,233 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Bin — Company Dashboard</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+      :root {
+        --bg1: #0f172a; --bg2: #1e293b;
+        --card: rgba(255,255,255,0.06); --card-border: rgba(255,255,255,0.12);
+        --text: #e5e7eb; --muted: #94a3b8; --accent: #38bdf8;
+        --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: linear-gradient(135deg, var(--bg1), var(--bg2));
+        color: var(--text);
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+      }
+      header {
+        padding: 18px 20px;
+        border-bottom: 1px solid var(--card-border);
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+      header h1 { font-size: 1.2rem; margin: 0; }
+      main {
+        flex: 1;
+        max-width: 1200px;
+        margin: 20px auto;
+        padding: 0 20px 40px;
+        display: grid;
+        gap: 20px;
+        grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--card-border);
+        border-radius: 14px;
+        padding: 16px;
+      }
+      .card h2 {
+        margin: 0 0 12px;
+        font-size: 1rem;
+        color: var(--accent);
+        font-weight: 700;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+      th, td {
+        padding: 8px 10px;
+        text-align: left;
+      }
+      th {
+        color: var(--muted);
+        font-weight: 600;
+        border-bottom: 1px solid var(--card-border);
+      }
+      tr:nth-child(even) {
+        background: rgba(255,255,255,0.03);
+      }
+      .alert {
+        background: rgba(239,68,68,0.15);
+        border: 1px solid var(--bad);
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-size: 0.9rem;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+      .alert svg {
+        flex-shrink: 0;
+        width: 18px;
+        height: 18px;
+        fill: var(--bad);
+      }
+      footer {
+        text-align: center;
+        padding: 14px;
+        font-size: 0.8rem;
+        color: var(--muted);
+      }
+      canvas { max-width: 100%; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Company Admin Dashboard</h1>
+      <div>Smart Garbage System</div>
+    </header>
+
+    <main>
+      <!-- Map -->
+      <section class="card">
+        <h2>Smart Garbage Bin Map</h2>
+        <div style="height:200px; background:rgba(255,255,255,0.04); border-radius:10px; display:grid; place-items:center; color:var(--muted);">
+          [Map Placeholder]
+        </div>
+      </section>
+
+      <!-- Live Bin Status -->
+      <section class="card">
+        <h2>Live Bin Status</h2>
+        <table>
+          <thead>
+            <tr>
+              <th>Bin ID</th><th>Location</th><th>Fill %</th><th>Deposit</th><th>Contamination</th>
+            </tr>
+          </thead>
+          <tbody id="binTableBody">
+            <tr><td>#102</td><td>Park St. 1</td><td>45%</td><td>Paper</td><td>—</td></tr>
+            <tr><td>#209</td><td>Elm Ave. 2</td><td>75%</td><td>Plastic</td><td>—</td></tr>
+            <tr><td>#156</td><td>3rd Ave. 3</td><td>30%</td><td>Metal</td><td>—</td></tr>
+            <tr><td>#248</td><td>Hill Rd. 1</td><td>95%</td><td>Other</td><td>Contaminated</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <!-- Waste Analytics -->
+      <section class="card">
+        <h2>Waste Analytics</h2>
+        <canvas id="wasteChart"></canvas>
+      </section>
+
+      <!-- Mis-sorts -->
+      <section class="card">
+        <h2>Mis-Sorts & Residue</h2>
+        <canvas id="misSortChart"></canvas>
+      </section>
+
+      <!-- Predictive Insights -->
+      <section class="card">
+        <h2>Predictive Insights</h2>
+        <div style="font-size:0.9rem;">
+          <p>Time-to-Full: <strong>4.2 days</strong></p>
+          <canvas id="predictiveChart"></canvas>
+        </div>
+      </section>
+
+      <!-- KPI Dashboard -->
+      <section class="card">
+        <h2>KPI Dashboard</h2>
+        <div style="font-size:1rem; display:grid; gap:6px;">
+          <div><strong>79%</strong> Recycling Efficiency</div>
+          <div><strong>6%</strong> Contamination Rate</div>
+          <div><strong>1.4</strong> Collections/day</div>
+        </div>
+      </section>
+
+      <!-- Alerts -->
+      <section class="card">
+        <h2>Alerts & Notifications</h2>
+        <div class="alert">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 15h-.01v2h.01v-2zm0-10c-.55 0-1 .45-1 1v6h2V8c0-.55-.45-1-1-1z"/></svg>
+          Bin #248: Contamination Detected
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      &copy; 2025 Smart Bin Technologies — Admin Panel
+    </footer>
+
+    <script>
+      // Waste analytics pie chart
+      new Chart(document.getElementById("wasteChart"), {
+        type: "pie",
+        data: {
+          labels: ["Plastic", "Paper", "Metal", "Other"],
+          datasets: [{
+            data: [33, 25, 12, 30],
+            backgroundColor: ["#38bdf8", "#60a5fa", "#94a3b8", "#475569"]
+          }]
+        },
+        options: { plugins: { legend: { labels: { color: "#e5e7eb" } } } }
+      });
+
+      // Mis-sorts bar chart
+      new Chart(document.getElementById("misSortChart"), {
+        type: "bar",
+        data: {
+          labels: ["Tue", "Wed", "Thu", "Mo"],
+          datasets: [{
+            label: "Mis-sorts",
+            data: [3,4,5,5],
+            backgroundColor: "#f59e0b"
+          }]
+        },
+        options: {
+          scales: {
+            x: { ticks: { color: "#e5e7eb" } },
+            y: { ticks: { color: "#e5e7eb" } }
+          },
+          plugins: { legend: { labels: { color: "#e5e7eb" } } }
+        }
+      });
+
+      // Predictive time-to-full line chart
+      new Chart(document.getElementById("predictiveChart"), {
+        type: "line",
+        data: {
+          labels: ["Mon","Tue","Wed","Thu","Fri"],
+          datasets: [{
+            label: "Fill %",
+            data: [40,55,68,80,92],
+            borderColor: "#38bdf8",
+            fill: false,
+            tension: 0.3
+          }]
+        },
+        options: {
+          scales: {
+            x: { ticks: { color: "#e5e7eb" } },
+            y: { ticks: { color: "#e5e7eb" } }
+          },
+          plugins: { legend: { labels: { color: "#e5e7eb" } } }
+        }
+      });
+    </script>
+  </body>
+</html>

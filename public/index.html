@@ -2,79 +2,264 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Smart Bin — Live Classification</title>
-    <link
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Smart Bin — Live (Dual Compartments)</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet" />
     <style>
+      :root {
+        --bg1: #0f172a; --bg2: #1e293b;
+        --card: rgba(255,255,255,0.06); --card-border: rgba(255,255,255,0.12);
+        --text: #e5e7eb; --muted: #94a3b8; --accent: #38bdf8;
+        --ok: #22c55e; --warn: #f59e0b; --bad: #ef4444;
+      }
+      * { box-sizing: border-box; } html, body { height: 100%; }
       body {
-        font-family: 'Inter', sans-serif;
-        background: linear-gradient(135deg, #0f172a, #1e293b);
-        color: #f8fafc;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        justify-content: center;
-        height: 100vh;
-        margin: 0;
-        padding: 20px;
+        margin: 0; font-family: Inter, system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+        background: linear-gradient(135deg, var(--bg1), var(--bg2)); color: var(--text);
+        display: flex; flex-direction: column; min-height: 100vh;
       }
-      h2 {
-        font-weight: 600;
-        font-size: 1.8rem;
-        margin-bottom: 1rem;
-        color: #38bdf8;
+      header { padding: 18px 20px; display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--card-border); }
+      header h1 { font-size: 1.2rem; margin: 0; font-weight: 700; }
+      .status-dot { width: 10px; height: 10px; border-radius: 999px; background: #9ca3af; }
+      .right { margin-left: auto; font-size: 0.9rem; color: var(--muted); }
+
+      main { width: 100%; max-width: 1100px; margin: 24px auto; padding: 0 20px 28px; display: grid; gap: 20px; }
+      .grid-two { display: grid; grid-template-columns: repeat(2, minmax(260px,1fr)); gap: 18px; }
+      @media (max-width: 780px) { .grid-two { grid-template-columns: 1fr; } }
+
+      .card { background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; padding: 16px; }
+      .card h2 { margin: 0 0 12px; font-size: 1rem; font-weight: 700; color: var(--accent); }
+
+      .gauge {
+        width: 160px; height: 160px; border-radius: 999px;
+        position: relative; display: grid; place-items: center;
+        border: 6px solid var(--card-border); overflow: hidden;
       }
-      pre {
-        background: rgba(255, 255, 255, 0.08);
-        border-radius: 10px;
-        padding: 20px;
-        width: 100%;
-        max-width: 500px;
-        font-family: monospace;
-        font-size: 1rem;
-        overflow-x: auto;
-        line-height: 1.4;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+      .gauge .fill {
+        position: absolute;
+        bottom: 0; left: 0; right: 0;
+        height: 0%;
+        background: var(--ok); /* solid color */
+        transition: height 300ms ease, background-color 300ms ease;
       }
-      footer {
-        margin-top: 1rem;
-        font-size: 0.9rem;
-        color: #94a3b8;
-      }
-      @media (max-width: 600px) {
-        pre {
-          font-size: 0.9rem;
-          padding: 15px;
-        }
-      }
+      .gauge .center { position: relative; z-index: 1; text-align: center; }
+      .gauge .center .big { font-size: 1.8rem; font-weight: 800; }
+      .gauge .center .sub { font-size: 0.85rem; color: var(--muted); }
+
+      .pill { display: inline-flex; align-items: center; gap: 8px; border: 1px solid var(--card-border); background: rgba(255,255,255,0.05); border-radius: 999px; padding: 6px 10px; font-size: 0.85rem; }
+      .pill .dot { width: 8px; height: 8px; border-radius: 999px; }
+
+      .kv { display: grid; grid-template-columns: 140px 1fr; gap: 8px 12px; font-size: 0.95rem; }
+      .kv .key { color: var(--muted); }
+
+      .history { display: grid; gap: 10px; }
+      .row { border: 1px solid var(--card-border); background: rgba(255,255,255,0.05); border-radius: 10px; padding: 10px; }
+
+      .actions { display: flex; gap: 10px; margin-top: 10px; }
+      button { border: 1px solid var(--card-border); background: rgba(255,255,255,0.08); color: var(--text); padding: 10px 14px; border-radius: 10px; font-weight: 600; cursor: pointer; }
+      button[disabled] { opacity: 0.6; cursor: not-allowed; }
     </style>
   </head>
-
   <body>
-    <h2>🧠 Live Classification</h2>
-    <pre id="out">Waiting for data...</pre>
-    <footer>Smart Bin Web Interface</footer>
+    <header>
+      <div class="status-dot" id="statusDot"></div>
+      <h1>Smart Bin — Live (Dual Compartments)</h1>
+      <div class="right" id="lastSeen">Connecting…</div>
+    </header>
+
+    <main>
+      <section class="card">
+        <h2>Fill Levels</h2>
+        <div class="grid-two">
+          <div style="display:flex; gap:16px; align-items:center;">
+            <div class="gauge">
+              <div class="fill" id="fillBarRecycle"></div>
+              <div class="center">
+                <div class="big" id="fillPctRecycle">--%</div>
+                <div class="sub" id="fillStateRecycle">Waiting…</div>
+              </div>
+            </div>
+            <div>
+              <div class="pill"><span class="dot" id="dotRecycle"></span><span>Recyclables</span></div>
+              <div style="height:10px"></div>
+              <div class="kv">
+                <div class="key">Bin ID</div><div id="kvBinRecycle">—</div>
+                <div class="key">Distance (cm)</div><div id="kvDistRecycle">—</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex; gap:16px; align-items:center;">
+            <div class="gauge">
+              <div class="fill" id="fillBarGeneral"></div>
+              <div class="center">
+                <div class="big" id="fillPctGeneral">--%</div>
+                <div class="sub" id="fillStateGeneral">Waiting…</div>
+              </div>
+            </div>
+            <div>
+              <div class="pill"><span class="dot" id="dotGeneral"></span><span>General Waste</span></div>
+              <div style="height:10px"></div>
+              <div class="kv">
+                <div class="key">Bin ID</div><div id="kvBinGeneral">—</div>
+                <div class="key">Distance (cm)</div><div id="kvDistGeneral">—</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card" id="historyCard">
+        <h2>History</h2>
+        <div id="historyEmpty" style="color: var(--muted); font-size: .95rem">No past classifications yet.</div>
+        <div id="historyList" class="history"></div>
+      </section>
+    </main>
 
     <script src="/socket.io/socket.io.js"></script>
     <script>
-      const out = document.getElementById('out');
+      const BIN_HEIGHT_CM = 80, NEAR_TOP_CM = 12;
+      const MAX_HISTORY_ITEMS = 20;
+
+      const statusDot = document.getElementById('statusDot');
+      const lastSeen = document.getElementById('lastSeen');
+
+      const fillBarRecycle = document.getElementById('fillBarRecycle');
+      const fillPctRecycle = document.getElementById('fillPctRecycle');
+      const fillStateRecycle = document.getElementById('fillStateRecycle');
+      const dotRecycle = document.getElementById('dotRecycle');
+      const kvBinRecycle = document.getElementById('kvBinRecycle');
+      const kvDistRecycle = document.getElementById('kvDistRecycle');
+
+      const fillBarGeneral = document.getElementById('fillBarGeneral');
+      const fillPctGeneral = document.getElementById('fillPctGeneral');
+      const fillStateGeneral = document.getElementById('fillStateGeneral');
+      const dotGeneral = document.getElementById('dotGeneral');
+      const kvBinGeneral = document.getElementById('kvBinGeneral');
+      const kvDistGeneral = document.getElementById('kvDistGeneral');
+
+      const historyEmpty = document.getElementById('historyEmpty');
+      const historyList = document.getElementById('historyList');
+
       const socket = io();
+      socket.on('connect', () => statusDot.style.background = '#22c55e');
+      socket.on('disconnect', () => statusDot.style.background = '#9ca3af');
 
-      const show = (data) => {
-        out.textContent = JSON.stringify(data, null, 2);
-      };
+      socket.on('pi:update', async (data) => {
+        lastSeen.textContent = `Last update: ${fmtTime(data.timestamp)}`;
+        updateUI(data);
+        if (isClassification(data)) await refreshHistory();
+      });
 
-      socket.on('pi:update', show);
+      fetch('/data').then(r => r.json()).then(async d => {
+        if (d?.lastResult) updateUI(d.lastResult);
+        await refreshHistory();
+      });
 
-      fetch('/data')
-        .then((r) => r.json())
-        .then((d) => d.lastResult && show(d.lastResult))
-        .catch(() => {
-          out.textContent = '⚠️ Failed to load initial data.';
+      function updateUI(entry){
+        const sAll = entry.sensors || {};
+        const sRecycle = sAll.recycle || sAll.recyclable || sAll.blue || sAll.comp1 || sAll["recyclable"] || {};
+        const sGeneral = sAll.general || sAll["non-recyclable"] || sAll.trash || sAll.black || sAll.comp2 || sAll["nonrecycle"] || {};
+
+        const binId = entry.bin_id || '—';
+        kvBinRecycle.textContent = binId; kvBinGeneral.textContent = binId;
+
+        updateGauge({
+          dist: coerceNumber(sRecycle.ultrasonic),
+          barEl: fillBarRecycle, pctEl: fillPctRecycle, stateEl: fillStateRecycle, dotEl: dotRecycle, distEl: kvDistRecycle
         });
+        updateGauge({
+          dist: coerceNumber(sGeneral.ultrasonic),
+          barEl: fillBarGeneral, pctEl: fillPctGeneral, stateEl: fillStateGeneral, dotEl: dotGeneral, distEl: kvDistGeneral
+        });
+      }
+
+      function updateGauge({ dist, barEl, pctEl, stateEl, dotEl, distEl }){
+        distEl.textContent = isFinite(dist) ? dist.toFixed(1) : '—';
+
+        let percent = null;
+        if (isFinite(dist) && BIN_HEIGHT_CM > 0) {
+          const d = Math.max(0, Math.min(dist, BIN_HEIGHT_CM * 1.25));
+          percent = Math.round((1 - (d / BIN_HEIGHT_CM)) * 100);
+          percent = Math.max(0, Math.min(100, percent));
+        }
+        if (percent === null) { pctEl.textContent = '--%'; stateEl.textContent = 'Waiting…'; return; }
+
+        barEl.style.height = `${percent}%`;
+        pctEl.textContent = `${percent}%`;
+
+        let state = 'Okay', color = 'var(--ok)';
+        if (percent >= 90 || (isFinite(dist) && dist <= NEAR_TOP_CM)) { state = 'Needs clearing'; color = 'var(--bad)'; }
+        else if (percent >= 70) { state = 'Getting full'; color = 'var(--warn)'; }
+
+        stateEl.textContent = state;
+        dotEl.style.background = color;
+        barEl.style.background = color;
+        barEl.style.backgroundImage = 'none';
+      }
+
+      async function refreshHistory(){
+        try {
+          const r = await fetch(`/history/classifications?limit=${MAX_HISTORY_ITEMS}`);
+          const data = await r.json();
+          renderHistory(data.items || []);
+        } catch {}
+      }
+
+      function renderHistory(items){
+        historyList.innerHTML = '';
+        if (!items.length) { historyEmpty.style.display = 'block'; return; }
+        historyEmpty.style.display = 'none';
+        items.forEach((item, idx) => {
+          const row = document.createElement('div');
+          row.className = 'row';
+          const r = (item.recyclable || '—').toString().toLowerCase();
+          const ultra = item.sensors?.ultrasonic ?? item.sensors?.recycle?.ultrasonic ?? item.sensors?.general?.ultrasonic ?? '—';
+          const weight = item.sensors?.weight ?? item.sensors?.recycle?.weight ?? item.sensors?.general?.weight ?? '—';
+
+          row.innerHTML = `
+            <div style="display:flex; justify-content:space-between; gap:10px; align-items:center">
+              <div>
+                <strong>${(item.label||'—')}</strong>
+                <span style="color: var(--muted);">• ${r}</span>
+              </div>
+              <div style="color: var(--muted); font-size:.9rem">${item.timestamp ? new Date(item.timestamp).toLocaleString() : ''}</div>
+            </div>
+            <div style="margin-top:6px; display:flex; flex-wrap:wrap; gap:12px; font-size:.9rem">
+              <span>conf: ${isFinite(item.confidence) ? (item.confidence*100).toFixed(1)+'%' : '—'}</span>
+              <span>bin: ${item.bin_id || '—'}</span>
+              <span>ultra: ${ultra}</span>
+              <span>weight: ${weight}</span>
+              <span>override: ${Number(item.override)||0}</span>
+            </div>`;
+
+          if (idx === 0 && r === 'contaminated' && (!Number(item.override))) {
+            const actions = document.createElement('div');
+            actions.className = 'actions';
+            const btn = document.createElement('button');
+            btn.textContent = 'Mark as NOT recyclable (Override)';
+            const msg = document.createElement('div');
+            msg.style.alignSelf = 'center'; msg.style.color = 'var(--muted)';
+            actions.appendChild(btn); actions.appendChild(msg);
+            row.appendChild(actions);
+            btn.addEventListener('click', async () => {
+              btn.disabled = true; msg.textContent = 'Sending override…';
+              try {
+                const body = { ...item, recyclable: 'no', override: 1 };
+                const res = await fetch('/override', { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+                if (!res.ok) throw new Error('HTTP '+res.status);
+                msg.textContent = 'Override sent.';
+                await refreshHistory();
+              } catch(e) { msg.textContent = 'Override failed.'; btn.disabled = false; }
+            });
+          }
+          historyList.appendChild(row);
+        });
+      }
+
+      function coerceNumber(v){ if (typeof v==='number') return v; if (typeof v==='string'){ const n = Number(v.replace(/[^0-9.+-]/g,'')); return Number.isFinite(n)?n:NaN; } return NaN; }
+      function fmtTime(t){ try{ const d = new Date(t); return isNaN(d.getTime()) ? String(t||'—') : d.toLocaleString(); } catch { return String(t||'—'); } }
+      function isClassification(e){ return e && (e.kind==='classification' || e.label!=null || e.recyclable!=null); }
     </script>
   </body>
 </html>
