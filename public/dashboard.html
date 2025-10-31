@@ -95,18 +95,13 @@
 
     a.bin-link {
       color: #4f8cff;
-      /* bright blue to match your accent color */
       font-weight: 600;
-      /* slightly bold for visibility */
-      text-decoration: none;
-      /* clean look */
+      text-decoration: none
     }
 
     a.bin-link:hover {
       color: #8cbcff;
-      /* lighter blue on hover */
-      text-decoration: underline;
-      /* make it clear it's clickable */
+      text-decoration: underline
     }
 
     .btn.small {
@@ -351,6 +346,7 @@
         <table class="table" id="pickupTable">
           <thead>
             <tr>
+              <th style="width:28px"><input type="checkbox" id="pickAll" /></th>
               <th>Bin</th>
               <th>Postal Code</th>
               <th>Current %</th>
@@ -361,11 +357,12 @@
           <tbody></tbody>
         </table>
       </div>
+
       <div class="panel" style="margin-top:16px">
         <h3 style="margin:0 0 8px">Bin Locations</h3>
+        <!-- Keep the map EMPTY initially (no markers) -->
         <iframe id="mapFrame" src="https://www.onemap.gov.sg/amm/amm.html?mapStyle=Default&zoomLevel=12&popupWidth=240"
-          width="100%" height="400" style="border:none;border-radius:12px">
-        </iframe>
+          width="100%" height="400" style="border:none;border-radius:12px"></iframe>
       </div>
 
     </section>
@@ -390,7 +387,6 @@
     document.getElementById('refreshBtn').onclick = () => { loadBins(); if (selectedId) drawChart(selectedId); };
     document.getElementById('clear').onclick = () => { document.getElementById('search').value = ''; renderBinList(); };
     document.querySelectorAll('[data-range]').forEach(b => b.onclick = () => { hoursRange = Number(b.dataset.range); if (selectedId) drawChart(selectedId); });
-
 
     async function loadBins() {
       const res = await fetch('/api/bins');
@@ -433,6 +429,8 @@
       document.getElementById('d_pct').textContent = (b.percent_full ?? '—') + '%';
       document.getElementById('d_state').textContent = b.state;
       drawChart(id);
+      // NEW: show only this bin on the map
+      showbinonmap(b);
     }
 
     async function drawChart(id) {
@@ -461,26 +459,9 @@
         data: {
           labels: [...labels, ...predLabels],
           datasets: [
-            {
-              label: 'Actual % full',
-              data: [...actual, ...Array(predLabels.length).fill(null)],
-              borderWidth: 2,
-              pointRadius: 0
-            },
-            {
-              label: 'Predicted % full',
-              data: [...Array(labels.length).fill(null), ...predData],
-              borderWidth: 2,
-              borderDash: [6, 6],
-              pointRadius: 0
-            },
-            {
-              label: '90% threshold',
-              data: [...Array(labels.length + predLabels.length).fill(90)],
-              borderWidth: 1,
-              borderDash: [2, 4],
-              pointRadius: 0
-            }
+            { label: 'Actual % full', data: [...actual, ...Array(predLabels.length).fill(null)], borderWidth: 2, pointRadius: 0 },
+            { label: 'Predicted % full', data: [...Array(labels.length).fill(null), ...predData], borderWidth: 2, borderDash: [6, 6], pointRadius: 0 },
+            { label: '90% threshold', data: [...Array(labels.length + predLabels.length).fill(90)], borderWidth: 1, borderDash: [2, 4], pointRadius: 0 }
           ]
         },
         options: {
@@ -489,110 +470,158 @@
           scales: {
             x: {
               type: 'time',
-              time: {
-                unit: hoursRange <= 24 ? 'hour' : 'day',
-                tooltipFormat: 'MMM dd HH:mm'
-              },
-              ticks: {
-                color: '#cdd7f5'
-              },
-              grid: {
-                color: '#1c2740'
-              }
+              time: { unit: hoursRange <= 24 ? 'hour' : 'day', tooltipFormat: 'MMM dd HH:mm' },
+              ticks: { color: '#cdd7f5' },
+              grid: { color: '#1c2740' }
             },
             y: { min: 0, max: 100, title: { display: true, text: 'Percent full' } }
           },
-          plugins: {
-            legend: { labels: { color: '#cdd7f5' } },
-            tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Math.round(ctx.parsed.y)}%` } }
-          }
+          plugins: { legend: { labels: { color: '#cdd7f5' } }, tooltip: { callbacks: { label: (ctx) => `${ctx.dataset.label}: ${Math.round(ctx.parsed.y)}%` } } }
         }
       });
     }
 
+    // =========================
+    // NEW: showbinonmap(b)
+    // Keeps map empty by default; when a bin is selected, show ONLY that marker.
+    // =========================
+    function showbinonmap(b) {
+      const iframe = document.getElementById('mapFrame');
+      const base = new URL('https://www.onemap.gov.sg/amm/amm.html');
+      const params = new URLSearchParams({ mapStyle: 'Default', zoomLevel: '12', popupWidth: '240' });
 
+      const code = String(b.postalCode || '').replace(/\D/g, '').slice(0, 6);
+      if (code.length !== 6) {
+        // Invalid postal → just show base map with no markers
+        iframe.src = base.toString() + '?' + params.toString();
+        console.warn('showbinonmap: invalid postal for', b.id, b.postalCode);
+        return;
+      }
 
-    // init
+      const pct = b.percent_full ?? 0;
+      const colour = pct >= 90 ? 'red' : pct >= 70 ? 'orange' : 'green';
+      const label = `${b.id} • ${pct}% full`;
+      params.append('marker', `postalcode:${code}!colour:${colour}!text:${encodeURIComponent(label)}`);
+
+      iframe.src = base.toString() + '?' + params.toString();
+    }
+
+    // Show multiple bins as markers. If none selected, keep the map empty.
+    function showBinsOnMap(bins) {
+      const iframe = document.getElementById('mapFrame');
+      const base = new URL('https://www.onemap.gov.sg/amm/amm.html');
+      const params = new URLSearchParams({ mapStyle: 'Default', zoomLevel: '12', popupWidth: '240' });
+
+      const valid = (bins || []).map(b => ({
+        id: b.id,
+        code: String(b.postalCode || '').replace(/[^0-9]/g, '').slice(0, 6),
+        pct: Number(b.percent_full ?? b.current_percent ?? 0)
+      })).filter(x => x.code.length === 6);
+
+      if (!valid.length) {
+        // No valid selections → show empty map
+        iframe.src = base.toString() + '?' + params.toString();
+        return;
+      }
+
+      valid.slice(0, 50).forEach(v => {
+        const colour = v.pct >= 90 ? 'red' : v.pct >= 70 ? 'orange' : 'green';
+        const label = `${v.id} • ${v.pct}% full`;
+        params.append('marker', `postalcode:${v.code}!colour:${colour}!text:${encodeURIComponent(label)}`);
+      });
+
+      iframe.src = base.toString() + '?' + params.toString();
+    }
+
+    // ===== init =====
     loadBins();
 
     async function loadPickupSchedule() {
-      const tbody = document.querySelector("#pickupTable tbody");
-      tbody.innerHTML = `<tr><td colspan="5" class="text-center">Loading...</td></tr>`;
+      const tbody = document.querySelector('#pickupTable tbody');
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center">Loading...</td></tr>`;
 
       try {
-        const res = await fetch("/api/pickups");
+        const res = await fetch('/api/pickups');
         const { items = [] } = await res.json();
 
         if (!items.length) {
-          tbody.innerHTML = `<tr><td colspan="5" class="text-center muted">No pickups scheduled</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center muted">No pickups scheduled</td></tr>`;
           return;
         }
 
         tbody.innerHTML = items.map(b => {
-          const eta = b.eta100_iso ? new Date(b.eta100_iso).toLocaleString() : "—";
+          const eta = b.eta100_iso ? new Date(b.eta100_iso).toLocaleString() : '—';
+          const pct = Number(b.current_percent ?? 0);
           return `
         <tr>
+          <td><input type="checkbox" class="pickRow" data-bin="${b.bin_id}" data-postal="${b.postalCode || ''}" data-pct="${pct}"></td>
           <td><a href="#" class="bin-link" data-bin="${b.bin_id}">${b.bin_id}</a></td>
-          <td>${b.postalCode || "-"}</td>
-          <td>${b.current_percent}%</td>
+          <td>${b.postalCode || '-'}</td>
+          <td>${pct}%</td>
           <td>${eta}</td>
           <td>${b.forecast_status}</td>
-        </tr>
-              `;
-        }).join("");
+        </tr>`;
+        }).join('');
 
-        // Click → show chart
-        tbody.querySelectorAll("a[data-bin]").forEach(a => {
+        // Click → show chart + single marker
+        tbody.querySelectorAll('a[data-bin]').forEach(a => {
           a.onclick = ev => {
             ev.preventDefault();
-            selectBin(a.dataset.bin);
+            const id = a.dataset.bin;
+            selectBin(id);
+            const row = a.closest('tr');
+            const fallback = row ? {
+              id,
+              postalCode: row.children[2]?.textContent?.trim() || '',
+              percent_full: Number(row.children[3]?.textContent) || 0
+            } : { id, postalCode: '', percent_full: 0 };
+            const b = binsCache.find(x => x.id === id) || fallback;
+            showbinonmap(b);
           };
         });
 
-      } catch (err) {
-        console.error(err);
-        tbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger">Error loading schedule</td></tr>`;
-      }
-    }
+        // Checkbox logic
+        const pickAll = document.getElementById('pickAll');
+        const rowCbs = tbody.querySelectorAll('.pickRow');
 
-    // Hook up reload button and auto-load
-    document.getElementById("reloadPickup").addEventListener("click", loadPickupSchedule);
-    window.addEventListener("DOMContentLoaded", loadPickupSchedule);
+        function updateMultiMap() {
+          const selected = Array.from(tbody.querySelectorAll('.pickRow:checked')).map(cb => ({
+            id: cb.dataset.bin,
+            postalCode: cb.dataset.postal,
+            percent_full: Number(cb.dataset.pct)
+          }));
+          showBinsOnMap(selected);
+        }
 
-    async function updateMapFromBins() {
-      try {
-        const res = await fetch('/api/bins');
-        const data = await res.json();
-        const bins = data.bins || [];
-
-        const params = new URLSearchParams();
-        params.set('mapStyle', 'Default');
-        params.set('zoomLevel', '12');
-        params.set('popupWidth', '240');
-
-        bins.slice(0, 50).forEach(b => {
-          const code = String(b.postalCode || '').replace(/\D/g, '').slice(0, 6);
-          if (code.length === 6) {
-            const pct = b.percent_full ?? 0;
-            const colour = pct >= 90 ? 'red' : pct >= 70 ? 'orange' : 'green';
-            const label = `${b.id} • ${pct}% full`;
-            console.log("Adding marker for", b.id, code);
-            params.append('marker', `postalcode:${code}!colour:${colour}!text:${encodeURIComponent(label)}`);
-          } else {
-            console.warn("Skipping invalid postal for", b.id, code);
-          }
+        // Row checkbox change
+        rowCbs.forEach(cb => {
+          cb.addEventListener('change', () => {
+            if (!cb.checked && pickAll) pickAll.checked = false;
+            else if (pickAll) pickAll.checked = Array.from(rowCbs).every(x => x.checked);
+            updateMultiMap();
+          });
         });
 
-        document.getElementById('mapFrame').src =
-          'https://www.onemap.gov.sg/amm/amm.html?' + params.toString();
+        // Select-all checkbox
+        if (pickAll) {
+          pickAll.onchange = () => {
+            rowCbs.forEach(cb => cb.checked = pickAll.checked);
+            updateMultiMap();
+          };
+        }
+
       } catch (err) {
-        console.error('Map update failed:', err);
+        console.error(err);
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger">Error loading schedule</td></tr>`;
       }
     }
 
-    // Load when dashboard loads
-    window.addEventListener('DOMContentLoaded', updateMapFromBins);
-    document.getElementById('reloadPickup').addEventListener('click', updateMapFromBins);
+    // Hook up reload button and auto-load (schedule only)
+    document.getElementById('reloadPickup').addEventListener('click', loadPickupSchedule);
+    window.addEventListener('DOMContentLoaded', loadPickupSchedule);
+
+    // IMPORTANT: Removed the old updateMapFromBins() & its listeners
+    // so the map stays empty until a bin is selected.
 
   </script>
 </body>
